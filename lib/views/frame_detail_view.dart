@@ -1,16 +1,156 @@
 import 'package:flutter/material.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
-import '../utils/app_state.dart';
+import '../models/frame_model.dart';
+import '../services/reservation_service.dart';
 
-class FrameDetailView extends StatelessWidget {
-  final Map<String, String> frame;
+class FrameDetailView extends StatefulWidget {
+  final FrameModel frame;
 
   const FrameDetailView({super.key, required this.frame});
+
+  @override
+  State<FrameDetailView> createState() => _FrameDetailViewState();
+}
+
+class _FrameDetailViewState extends State<FrameDetailView> {
+  final ReservationService _reservationService = ReservationService();
+  bool _isReserving = false;
+
+  Future<void> _handleReserve() async {
+    final colorScheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+
+    // Show informative confirmation dialog
+    final bool? confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: const BorderSide(color: Color(0xFF2A2A35)),
+        ),
+        backgroundColor: const Color(0xFF141414),
+        title: Text(
+          'Reserve Frame',
+          style: textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'You are about to submit a reservation request for:',
+              style: textTheme.bodyMedium?.copyWith(
+                color: colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFF1F1F28),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: colorScheme.primary.withValues(alpha: 0.3),
+                ),
+              ),
+              child: Text(
+                widget.frame.frameName,
+                style: textTheme.titleMedium?.copyWith(
+                  color: colorScheme.primary,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'Your reservation will be reviewed by the clinic staff.',
+              style: textTheme.bodySmall?.copyWith(
+                color: colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: Text(
+              'Cancel',
+              style: textTheme.labelLarge?.copyWith(
+                color: colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: colorScheme.primary,
+              foregroundColor: const Color(0xFF141414),
+            ),
+            child: const Text(
+              'Reserve',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    setState(() {
+      _isReserving = true;
+    });
+
+    try {
+      await _reservationService.createReservation(widget.frame);
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '${widget.frame.frameName} reservation request submitted!',
+          ),
+          backgroundColor: colorScheme.primary,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+
+      Navigator.pop(context);
+    } catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(e.toString()),
+          backgroundColor: colorScheme.error,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isReserving = false;
+        });
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
     final colorScheme = Theme.of(context).colorScheme;
+
+    final displayStyle =
+        widget.frame.frameStyle.isNotEmpty ? widget.frame.frameStyle : 'Standard';
+    final displayBrand =
+        widget.frame.brand.isNotEmpty ? widget.frame.brand : 'LensMatch';
+    final displayDescription = widget.frame.description.isNotEmpty
+        ? widget.frame.description
+        : 'Elevate your look with the ${widget.frame.frameName}. Crafted with quality, these frames offer a perfect blend of durability and luxury style. Ideal for all-day comfort.';
+
+    final bool isAvailable = widget.frame.availability;
 
     return Scaffold(
       extendBodyBehindAppBar: true,
@@ -26,20 +166,46 @@ class FrameDetailView extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Big image placeholder
+            // Big image container or fallback icon
             Container(
               height: 400,
               width: double.infinity,
-              decoration: BoxDecoration(
-                color: const Color(0xFF0A0A0A),
+              decoration: const BoxDecoration(
+                color: Color(0xFF0A0A0A),
               ),
               child: SafeArea(
                 child: Center(
-                  child: Icon(
-                    PhosphorIcons.eyeglasses,
-                    size: 120,
-                    color: colorScheme.primary.withValues(alpha: 0.5),
-                  ),
+                  child: widget.frame.imageUrl.isNotEmpty
+                      ? Image.network(
+                          widget.frame.imageUrl,
+                          fit: BoxFit.contain,
+                          errorBuilder: (context, error, stackTrace) {
+                            return Icon(
+                              PhosphorIcons.eyeglasses,
+                              size: 120,
+                              color: colorScheme.primary.withValues(alpha: 0.5),
+                            );
+                          },
+                          loadingBuilder: (context, child, loadingProgress) {
+                            if (loadingProgress == null) return child;
+                            return Center(
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: colorScheme.primary,
+                                value: loadingProgress.expectedTotalBytes !=
+                                        null
+                                    ? loadingProgress.cumulativeBytesLoaded /
+                                        loadingProgress.expectedTotalBytes!
+                                    : null,
+                              ),
+                            );
+                          },
+                        )
+                      : Icon(
+                          PhosphorIcons.eyeglasses,
+                          size: 120,
+                          color: colorScheme.primary.withValues(alpha: 0.5),
+                        ),
                 ),
               ),
             ),
@@ -56,35 +222,41 @@ class FrameDetailView extends StatelessWidget {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(frame['name']!, style: textTheme.headlineMedium),
+                            Text(widget.frame.frameName, style: textTheme.headlineMedium),
                             const SizedBox(height: 8),
-                            Text(frame['price']!, style: textTheme.headlineSmall?.copyWith(color: colorScheme.primary)),
+                            Text(widget.frame.formattedPrice,
+                                style: textTheme.headlineSmall?.copyWith(
+                                    color: colorScheme.primary)),
                           ],
                         ),
                       ),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 6),
                         decoration: BoxDecoration(
                           color: colorScheme.primary.withValues(alpha: 0.1),
                           borderRadius: BorderRadius.circular(16),
-                          border: Border.all(color: colorScheme.primary.withValues(alpha: 0.2)),
+                          border: Border.all(
+                              color: colorScheme.primary.withValues(alpha: 0.2)),
                         ),
-                        child: Text(frame['shape']!, style: textTheme.labelMedium?.copyWith(color: colorScheme.primary)),
+                        child: Text(displayStyle,
+                            style: textTheme.labelMedium?.copyWith(
+                                color: colorScheme.primary)),
                       ),
                     ],
                   ),
                   const SizedBox(height: 24),
                   Text('Details', style: textTheme.titleLarge),
                   const SizedBox(height: 12),
-                  _buildDetailRow(context, 'Material', frame['material']!),
-                  _buildDetailRow(context, 'Shape', frame['shape']!),
-                  _buildDetailRow(context, 'Fit', 'Standard'),
-                  
+                  _buildDetailRow(context, 'Brand', displayBrand),
+                  _buildDetailRow(context, 'Style', displayStyle),
+                  _buildDetailRow(
+                      context, 'Status', isAvailable ? 'In Stock' : 'Out of Stock'),
                   const SizedBox(height: 32),
                   Text('Description', style: textTheme.titleLarge),
                   const SizedBox(height: 12),
                   Text(
-                    'Elevate your look with the ${frame['name']}. Crafted from premium ${frame['material'].toString().toLowerCase()}, these frames offer a perfect blend of durability and luxury style. Ideal for all-day comfort.',
+                    displayDescription,
                     style: textTheme.bodyMedium?.copyWith(height: 1.5),
                   ),
                   const SizedBox(height: 40),
@@ -103,36 +275,46 @@ class FrameDetailView extends StatelessWidget {
         child: SafeArea(
           child: SizedBox(
             width: double.infinity,
-            child: ValueListenableBuilder<List<Map<String, dynamic>>>(
-              valueListenable: AppState.reservedFrames,
-              builder: (context, reservedList, child) {
-                final isReserved = reservedList.any((item) => item['id'] == frame['id']);
-                
-                return ElevatedButton(
-                  onPressed: isReserved ? null : () {
-                    AppState.addReservation(frame);
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text('${frame['name']} reserved successfully!'),
-                        backgroundColor: colorScheme.primary,
-                        behavior: SnackBarBehavior.floating,
+            child: ElevatedButton(
+              onPressed: (!isAvailable || _isReserving)
+                  ? null
+                  : () => _handleReserve(),
+              style: ElevatedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                disabledBackgroundColor:
+                    colorScheme.surface.withValues(alpha: 0.5),
+              ),
+              child: _isReserving
+                  ? Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Text(
+                          'Reserving...',
+                          style: textTheme.titleMedium?.copyWith(
+                            color: colorScheme.onSurfaceVariant,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    )
+                  : Text(
+                      !isAvailable ? 'Out of Stock' : 'Reserve Now',
+                      style: textTheme.titleMedium?.copyWith(
+                        color: !isAvailable
+                            ? colorScheme.onSurfaceVariant
+                            : const Color(0xFF141414),
+                        fontWeight: FontWeight.bold,
                       ),
-                    );
-                    Navigator.pop(context);
-                  },
-                  style: ElevatedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    disabledBackgroundColor: colorScheme.surface.withValues(alpha: 0.5),
-                  ),
-                  child: Text(
-                    isReserved ? 'Already Reserved' : 'Reserve Now',
-                    style: textTheme.titleMedium?.copyWith(
-                      color: isReserved ? colorScheme.onSurfaceVariant : const Color(0xFF141414),
-                      fontWeight: FontWeight.bold,
                     ),
-                  ),
-                );
-              },
             ),
           ),
         ),
@@ -146,8 +328,14 @@ class FrameDetailView extends StatelessWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(label, style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
-          Text(value, style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600)),
+          Text(label,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant)),
+          Text(value,
+              style: Theme.of(context)
+                  .textTheme
+                  .bodyMedium
+                  ?.copyWith(fontWeight: FontWeight.w600)),
         ],
       ),
     );

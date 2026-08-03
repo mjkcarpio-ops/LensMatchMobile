@@ -3,7 +3,8 @@ import 'package:flutter/material.dart';
 
 import 'camera_view.dart';
 import 'reservations_view.dart';
-import '../utils/app_state.dart';
+import '../models/reservation_model.dart';
+import '../services/reservation_service.dart';
 
 class HomeView extends StatelessWidget {
   final VoidCallback? onScanPressed;
@@ -61,15 +62,16 @@ class HomeView extends StatelessWidget {
             const SizedBox(height: 16),
             _buildQuickLink(context, 'Last result', 'Oval shape - 3 recommendations'),
             const SizedBox(height: 12),
-            ValueListenableBuilder<List<Map<String, dynamic>>>(
-              valueListenable: AppState.reservedFrames,
-              builder: (context, reservedList, child) {
+            StreamBuilder<List<ReservationModel>>(
+              stream: ReservationService().getUserReservationsStream(),
+              builder: (context, snapshot) {
+                final count = snapshot.data?.length ?? 0;
+                final subtitle = count == 1 ? '1 item reserved' : '$count items reserved';
                 return _buildQuickLink(
                   context, 
                   'My Reservations', 
-                  '${reservedList.length} items reserved',
+                  subtitle,
                   onTap: () {
-                    // We wrap it in a Scaffold so it has a back button if pushed over Home
                     Navigator.push(
                       context,
                       MaterialPageRoute(
