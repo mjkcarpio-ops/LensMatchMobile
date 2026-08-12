@@ -61,6 +61,17 @@ class AuthService {
         await _auth.signOut();
         throw 'This account has been deactivated. Please contact support.';
       }
+    } on FirebaseException catch (fe) {
+      if (fe.code == 'unavailable' ||
+          (fe.message?.contains('Unable to resolve host') ?? false) ||
+          fe.code == 'network-request-failed') {
+        throw 'Network error: Unable to connect to Firebase services. Please check your internet connection.';
+      } else if (fe.code == 'permission-denied') {
+        await _auth.signOut();
+        throw 'Permission Denied: Firestore security rules are blocking access to your customer profile.';
+      }
+      await _auth.signOut();
+      throw 'Authorization check failed. Please log in again.';
     } catch (e) {
       if (e is String) rethrow;
       await _auth.signOut();
